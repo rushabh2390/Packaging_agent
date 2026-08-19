@@ -1,15 +1,23 @@
-#!/bin/sh
-set -e
+﻿#!/bin/sh
 
-echo "⏳ Waiting for PostgreSQL to start..."
+# 1. Start Ollama server in background
+ollama serve &
 
-# Wait until Postgres port is reachable
-while ! nc -z postgres 5432; do
-  sleep 1
+# 2. Wait until Ollama engine is responsive
+echo "Waiting for Ollama service boot sequence..."
+until ollama list > /dev/null 2>&1; do
+  sleep 2
 done
+echo "Ollama core engine online!"
 
-echo "🐘 PostgreSQL is up - executing database migrations..."
-./migrate
+# 3. Download model only if it does NOT exist locally
+if ! ollama list | grep -q "qwen2.5-coder:3b"; then
+  echo "Pulling qwen2.5-coder:3b model (this may take a few minutes)..."
+  ollama pull qwen2.5-coder:3b
+  echo "Model initialization complete!"
+else
+  echo "Model qwen2.5-coder:3b already downloaded and ready."
+fi
 
-echo "🚀 Starting Go Fiber Backend..."
-exec ./api
+# 4. Keep container running
+wait

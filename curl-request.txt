@@ -1,0 +1,43 @@
+curl -X 'POST' \
+  'http://localhost:8080/pack' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+       "messages": [
+         {
+           "role": "user",
+           "content": "Pack 3 glass bottles of dimensions 100x100x250mm into an optimal E-Commerce shipping box."
+         }
+       ],
+       "retrieval_k": 3,
+       "temperature": 0.7,
+       "top_k": 40
+}'
+------------
+response
+{
+  "bin_dimensions": [
+    600,
+    400,
+    400
+  ],
+  "fill_percentage": 84.5,
+  "execution_time": "12.4ms",
+  "placements": [
+    {
+      "item_id": "item-101",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dim": [
+        200,
+        150,
+        100
+      ],
+      "color": "#2563eb"
+    }
+  ],
+  "ai_recommendation": "To pack three glass bottles of dimensions 100x100x250mm into an E-commerce shipping box, we need to consider the dimensions of each bottle, the total volume required, and the capabilities of the available packaging boxes.\n\nFirstly, let's calculate the total volume needed for three bottles:\nVolume per bottle = 100 mm x 100 mm x 250 mm\nTotal volume = 3 x (100 x 100 x 250) = 7,500,000 cubic millimeters\n\nNow, let's analyze the options:\n\n1. FEFCO 0201 Regular Slotted Container (RSC):\n- Dimensions: 286x400x380mm\n- Capacity: Approximately 4,000 cubic centimeters (0.4 liters)\n- Flute thickness: Not specified in the reference styles\n\nThe RSC has a capacity of approximately 4 liters, which is more than enough for three bottles. However, it might not be optimal due to its size and weight.\n\n2. FEFCO 0427 Roll-End Tuck Top Mailer E-commerce Self-locking mailer box:\n- Dimensions: 350x350x400mm\n- Capacity: Approximately 6 liters (or about 6,000 cubic centimeters)\n- Flute thickness: Not specified in the reference styles\n\nThis mailer is suitable for larger volumes but might be too large to ship on its own.\n\n3. FEFCO 0300 Telescope Box (Lid & Tray) Display Two-piece box:\n- Dimensions: 250x300x400mm\n- Capacity: Approximately 6 liters (or about 6,000 cubic centimeters)\n- Flute thickness: Not specified in the reference styles\n\nThis box is also suitable for larger volumes and might be too large to ship on its own.\n\nConsidering the volume requirements and the available options, a FEFCO 0427 Roll-End Tuck Top Mailer E-commerce Self-locking mailer box would be the most optimal choice. However, if you want to maximize space utilization, a FEFCO 0300 Telescope Box (Lid & Tray) Display Two-piece box could also work.\n\nTo determine the best flute thickness, we need more information about the material and density of the glass bottles and the packaging box itself. In general, using thicker flutes can improve structural integrity and reduce air leakage during shipping.\n\nAs for orientation, you should stack the glasses on top of each other or align them in a single row to maximize space utilization while ensuring stability. The orientation should also consider the weight distribution to prevent any part from tipping over during transit.\n\nIn conclusion, the optimal box style would be a FEFCO 0427 Roll-End Tuck Top Mailer E-commerce Self-locking mailer box with a flute thickness of at least 1 mm. You can stack the glasses on top of each other for maximum space utilization while ensuring stability during transit."
+}

@@ -1,8 +1,12 @@
-.PHONY: dev-backend dev-frontend docs docker-up docker-down
+.PHONY: dev-backend dev-frontend docs docker-up docker-down migrate
 
-# Run Go Fiber backend locally
+# Run Go Fiber backend locally from backend/main.go
 dev-backend:
-	cd backend && swag init -g cmd/api/main.go && go run cmd/api/main.go
+	cd backend && swag init -g main.go && go run main.go
+
+# Run database migrations
+migrate:
+	cd backend && go run cmd/migrate/migrate.go
 
 # Run Nuxt 3 frontend locally
 dev-frontend:
@@ -10,7 +14,7 @@ dev-frontend:
 
 # Re-generate Swagger docs for Go backend
 docs:
-	cd backend && swag init -g cmd/api/main.go
+	cd backend && swag init -g main.go
 
 # Run whole stack with Docker
 docker-up:
