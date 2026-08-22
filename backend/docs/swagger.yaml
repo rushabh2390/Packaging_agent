@@ -1,27 +1,4 @@
 definitions:
-  handlers.BinPackingResponse:
-    properties:
-      ai_recommendation:
-        type: string
-      bin_dimensions:
-        example:
-        - 600
-        - 400
-        - 400
-        items:
-          type: number
-        type: array
-      execution_time:
-        example: 12.4ms
-        type: string
-      fill_percentage:
-        example: 84.5
-        type: number
-      placements:
-        items:
-          $ref: '#/definitions/handlers.PackedPlacement'
-        type: array
-    type: object
   handlers.BoxStyleResponse:
     properties:
       category:
@@ -73,31 +50,6 @@ definitions:
       top_k:
         example: 40
         type: integer
-    type: object
-  handlers.PackedPlacement:
-    properties:
-      color:
-        example: '#2563eb'
-        type: string
-      dim:
-        example:
-        - 200
-        - 150
-        - 100
-        items:
-          type: number
-        type: array
-      item_id:
-        example: item-101
-        type: string
-      pos:
-        example:
-        - 0
-        - 0
-        - 0
-        items:
-          type: number
-        type: array
     type: object
   main.PackagingRecommendation:
     properties:
@@ -154,8 +106,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Accepts chat messages, retrieval parameters, and LLM hyperparameters
-        to return optimized 3D coordinate placements.
+      description: Stream LLM tokens and spatial calculations via Server-Sent Events
+        (SSE).
       parameters:
       - description: Packing agent request payload
         in: body
@@ -164,12 +116,12 @@ paths:
         schema:
           $ref: '#/definitions/handlers.PackRequestPayload'
       produces:
-      - application/json
+      - text/event-stream
       responses:
         "200":
-          description: OK
+          description: 'data: {JSON}\n\n'
           schema:
-            $ref: '#/definitions/handlers.BinPackingResponse'
+            type: string
         "400":
           description: Invalid request payload
           schema:
@@ -182,7 +134,7 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Run 3D Bin Packing Optimization Agent
+      summary: Run 3D Bin Packing Optimization Agent (Streaming)
       tags:
       - Spatial Engine
   /api/v1/recommend:

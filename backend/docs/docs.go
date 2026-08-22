@@ -49,17 +49,17 @@ const docTemplate = `{
         },
         "/api/v1/pack": {
             "post": {
-                "description": "Accepts chat messages, retrieval parameters, and LLM hyperparameters to return optimized 3D coordinate placements.",
+                "description": "Stream LLM tokens and spatial calculations via Server-Sent Events (SSE).",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "text/event-stream"
                 ],
                 "tags": [
                     "Spatial Engine"
                 ],
-                "summary": "Run 3D Bin Packing Optimization Agent",
+                "summary": "Run 3D Bin Packing Optimization Agent (Streaming)",
                 "parameters": [
                     {
                         "description": "Packing agent request payload",
@@ -73,9 +73,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "data: {JSON}\\n\\n",
                         "schema": {
-                            "$ref": "#/definitions/handlers.BinPackingResponse"
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -185,39 +185,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "handlers.BinPackingResponse": {
-            "type": "object",
-            "properties": {
-                "ai_recommendation": {
-                    "type": "string"
-                },
-                "bin_dimensions": {
-                    "type": "array",
-                    "items": {
-                        "type": "number"
-                    },
-                    "example": [
-                        600,
-                        400,
-                        400
-                    ]
-                },
-                "execution_time": {
-                    "type": "string",
-                    "example": "12.4ms"
-                },
-                "fill_percentage": {
-                    "type": "number",
-                    "example": 84.5
-                },
-                "placements": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.PackedPlacement"
-                    }
-                }
-            }
-        },
         "handlers.BoxStyleResponse": {
             "type": "object",
             "properties": {
@@ -289,41 +256,6 @@ const docTemplate = `{
                 "top_k": {
                     "type": "integer",
                     "example": 40
-                }
-            }
-        },
-        "handlers.PackedPlacement": {
-            "type": "object",
-            "properties": {
-                "color": {
-                    "type": "string",
-                    "example": "#2563eb"
-                },
-                "dim": {
-                    "type": "array",
-                    "items": {
-                        "type": "number"
-                    },
-                    "example": [
-                        200,
-                        150,
-                        100
-                    ]
-                },
-                "item_id": {
-                    "type": "string",
-                    "example": "item-101"
-                },
-                "pos": {
-                    "type": "array",
-                    "items": {
-                        "type": "number"
-                    },
-                    "example": [
-                        0,
-                        0,
-                        0
-                    ]
                 }
             }
         },

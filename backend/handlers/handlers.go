@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -58,28 +60,27 @@ type MaterialResponse struct {
 	MaxWeight float64 `json:"max_weight_kg" example:"10.0"`
 }
 
-// SolvePackingHandler processes spatial packing prompts with hyperparameter settings and Ollama integration.
-// @Summary Run 3D Bin Packing Optimization Agent
-// @Description Accepts chat messages, retrieval parameters, and LLM hyperparameters to return optimized 3D coordinate placements.
+// SolvePackingHandler streams spatial optimization results and LLM tokens.
+// @Summary Run 3D Bin Packing Optimization Agent (Streaming)
+// @Description Stream LLM tokens and spatial calculations via Server-Sent Events (SSE).
 // @Tags Spatial Engine
 // @Accept json
-// @Produce json
+// @Produce text/event-stream
 // @Param request body PackRequestPayload true "Packing agent request payload"
-// @Success 200 {object} BinPackingResponse
+// @Success 200 {string} string "data: {JSON}\n\n"
 // @Failure 400 {object} map[string]string "Invalid request payload"
 // @Failure 500 {object} map[string]string "LLM or DB error"
 // @Router /api/v1/pack [post]
 func SolvePackingHandler(c *fiber.Ctx) error {
 	startTime := time.Now()
-	slog.Info("Handling /pack request", "client_ip", c.IP(), "method", c.Method())
+	slog.Info("Handling /pack streaming request", "client_ip", c.IP(), "method", c.Method())
 
 	var req PackRequestPayload
 	if err := c.BodyParser(&req); err != nil {
-		slog.Warn("Failed to parse /pack request body", "error", err, "client_ip", c.IP())
+		slog.Warn("Failed to parse /pack request body", "error", err)
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
 	}
 
-	// 1. Extract the latest user message prompt
 	var userPrompt string
 	for _, msg := range req.Messages {
 		if msg.Role == "user" {
@@ -88,53 +89,60 @@ func SolvePackingHandler(c *fiber.Ctx) error {
 	}
 
 	if userPrompt == "" {
-		slog.Warn("Validation failed: empty user prompt in /pack request", "messages_count", len(req.Messages))
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "No user message content provided"})
 	}
 
-	slog.Debug("Extracted user prompt for spatial optimization", "prompt_len", len(userPrompt), "retrieval_k", req.RetrievalK)
-
-	// 2. Retrieve matched box styles from SQLite (using RetrievalK parameter)
 	styles, err := db.GetStylesLimit(req.RetrievalK)
 	if err != nil {
-		slog.Warn("Database query for box styles failed; falling back to empty context", "error", err, "limit", req.RetrievalK)
-		// Fallback to empty context if query fails
 		styles = []db.BoxStyle{}
-	} else {
-		slog.Debug("Retrieved database box style context", "matched_styles_count", len(styles))
 	}
 
-	// 3. Construct prompt with DB Context
 	augmentedPrompt := fmt.Sprintf(`You are an expert 3D structural packaging engineer.
 		User Query: %s
+		Matched Database Reference Styles: %v
+Analyze spatial requirements and recommend optimal box style, flute thickness, and orientation.`, userPrompt, styles)
 
-		Matched Database Reference Styles:
-		%v
+	// Set standard SSE Headers
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
 
-Analyze the spatial requirements and recommend the optimal box style, flute thickness, and orientation.`,
-		userPrompt, styles)
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Step A: Stream Spatial Calculations First
+		initialPayload := BinPackingResponse{
+			BinDimensions:  [3]float64{600, 400, 400},
+			FillPercentage: 84.5,
+			ExecutionTime:  fmt.Sprintf("%vms", time.Since(startTime).Milliseconds()),
+			Placements: []PackedPlacement{
+				{ItemID: "item-101", Pos: [3]float64{0, 0, 0}, Dim: [3]float64{200, 150, 100}, Color: "#2563eb"},
+			},
+		}
 
-	// 4. Call Ollama passing temperature and top_k parameters
-	aiResult, err := services.GenerateRecommendationWithParams(augmentedPrompt, req.Temperature, req.TopK)
-	if err != nil {
-		slog.Error("Ollama service failed during recommendation generation; continuing with warning response", "error", err)
-		// Log warning and proceed with spatial layout calculations
-		aiResult = "AI Recommendation service unavailable: " + err.Error()
-	}
+		spatialData, _ := json.Marshal(initialPayload)
+		fmt.Fprintf(w, "data: %s\n\n", spatialData)
+		w.Flush()
 
-	// 5. Build response payload
-	response := BinPackingResponse{
-		BinDimensions:  [3]float64{600, 400, 400},
-		FillPercentage: 84.5,
-		ExecutionTime:  fmt.Sprintf("%vms", time.Since(startTime).Milliseconds()),
-		Placements: []PackedPlacement{
-			{ItemID: "item-101", Pos: [3]float64{0, 0, 0}, Dim: [3]float64{200, 150, 100}, Color: "#2563eb"},
-		},
-		AIRecommendation: aiResult,
-	}
+		// Step B: Stream AI Recommendation tokens in real time
+		err := services.StreamRecommendationWithParams(augmentedPrompt, req.Temperature, req.TopK, func(token string) {
+			tokenPayload, _ := json.Marshal(map[string]string{"ai_recommendation": token})
+			fmt.Fprintf(w, "data: %s\n\n", tokenPayload)
+			w.Flush()
+		})
 
-	slog.Info("Successfully fulfilled /pack request", "duration_ms", time.Since(startTime).Milliseconds(), "fill_percentage", response.FillPercentage)
-	return c.JSON(response)
+		// Log error to stream if Ollama fails mid-request
+		if err != nil {
+			slog.Error("Streaming error from Ollama", "error", err)
+			errPayload, _ := json.Marshal(map[string]string{"ai_recommendation": "\n\n[Error streaming AI response]"})
+			fmt.Fprintf(w, "data: %s\n\n", errPayload)
+			w.Flush()
+		}
+
+		// Step C: Send Done Signal
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		w.Flush()
+	})
+
+	return nil
 }
 
 // GetBoxStylesHandler fetches box styles from SQLite box_db.db.

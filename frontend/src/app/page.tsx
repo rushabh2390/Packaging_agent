@@ -59,56 +59,73 @@ export default function PackagingStandardHub() {
     setChatHistory(updatedHistory);
     setLoading(true);
 
+    // Append empty assistant message to stream tokens into
+    setChatHistory((prev) => [...prev, { role: "assistant", content: "" }]);
+
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/pack`,
-        {
+      const response = await fetch(`${API_BASE_URL}/pack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           messages: updatedHistory,
           retrieval_k: retrievalK,
           temperature: temperature,
           top_k: topK,
-        },
-        {
-          headers: { "Content-Type": "application/json" },
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantText = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const rawData = line.slice(6).trim();
+            if (rawData === "[DONE]") break;
+
+            try {
+              const parsed = JSON.parse(rawData);
+
+              // Update 3D Inspector View if spatial metadata arrives
+              if (parsed.placements || parsed.bin_dimensions) {
+                setInspectorContent(
+                  `### Spatial Placement Metrics\n* **Fill Efficiency**: \`${parsed.fill_percentage || "85"}%\`\n* **Box Dimension**: \`${parsed.bin_dimensions?.join("×") || "320×220×150"}\` mm\n`
+                );
+              }
+
+              // Append streaming AI text chunks
+              if (parsed.ai_recommendation) {
+                assistantText += parsed.ai_recommendation;
+                setChatHistory((prev) => {
+                  const newHistory = [...prev];
+                  newHistory[newHistory.length - 1] = {
+                    role: "assistant",
+                    content: assistantText,
+                  };
+                  return newHistory;
+                });
+              }
+            } catch (e) {
+              // Ignore partial SSE chunk parse errors
+            }
+          }
         }
-      );
-
-      const data = response.data;
-      const botResponseMd =
-        data.response_md ||
-        data.ai_recommendation ||
-        `### Recommended Packaging Box Sizing
-* **Outer Dimensions**: 320mm × 220mm × 150mm
-* **Recommended FEFCO Code**: **FEFCO 0201** (Standard Regular Slotted Container)
-
-| Parameter | Product Input | Recommended Box |
-| :--- | :--- | :--- |
-| **Length** | 300 mm | **320 mm** |
-| **Width** | 200 mm | **220 mm** |
-| **Height** | 120 mm | **150 mm** |
-`;
-
-      setChatHistory((prev) => [
-        ...prev,
-        { role: "assistant", content: botResponseMd },
-      ]);
-
-      if (data.placements || data.bin_dimensions) {
-        setInspectorContent(
-          `### Spatial Placement Metrics
-* **Fill Efficiency**: \`${data.fill_percentage || "85"}%\`
-* **Box Dimension**: \`${data.bin_dimensions?.join("×") || "320×220×150"}\` mm
-`
-        );
       }
     } catch (err: any) {
-      const errorMessage =
-        err.response?.data?.message ||
-        err.message ||
-        "Unable to connect to backend engine.";
-
+      const errorMessage = err.message || "Unable to connect to backend engine.";
       setChatHistory((prev) => [
-        ...prev,
+        ...prev.slice(0, -1),
         {
           role: "assistant",
           content: `**Error:** ${errorMessage}. Please check if your Go service is running on \`${API_BASE_URL}\`.`,
@@ -146,7 +163,7 @@ export default function PackagingStandardHub() {
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left Column: Active Conversation Space & Inputs */}
         <div className="lg:col-span-9 flex flex-col gap-4">
-          
+
           {/* Active Conversation Space (Fixed Height with Auto-Slide/Scroll) */}
           <div className="h-[680px] bg-[#111827] border border-slate-800/80 rounded-xl p-4 flex flex-col">
             <div className="flex items-center gap-2 pb-3 mb-3 border-b border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-400 shrink-0">
@@ -165,11 +182,10 @@ export default function PackagingStandardHub() {
                 chatHistory.map((msg, index) => (
                   <div
                     key={index}
-                    className={`p-4 rounded-xl text-xs leading-relaxed transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 ${
-                      msg.role === "user"
+                    className={`p-4 rounded-xl text-xs leading-relaxed transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 ${msg.role === "user"
                         ? "bg-slate-800 text-slate-200 self-end max-w-[80%]"
                         : "bg-[#0b0f19] border border-slate-800 text-slate-300 self-start w-full"
-                    }`}
+                      }`}
                   >
                     <p className="font-semibold text-[10px] uppercase mb-2 text-emerald-400 tracking-wider">
                       {msg.role === "user" ? "Product Request" : "Packaging Agent"}

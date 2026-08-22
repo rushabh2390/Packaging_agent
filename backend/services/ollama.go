@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -46,37 +47,35 @@ Example Table Format:
 
 Do NOT return continuous unformatted prose or walls of plain text.`
 
-func GenerateRecommendationWithParams(prompt string, temp float64, topK int) (string, error) {
+// StreamRecommendationWithParams streams individual LLM tokens from local Ollama to a callback function.
+func StreamRecommendationWithParams(prompt string, temp float64, topK int, onToken func(string)) error {
 	startTime := time.Now()
 	modelName := "qwen2.5-coder:3b"
 
-	slog.Info("Initiating Ollama recommendation generation",
+	slog.Info("Initiating Ollama streaming recommendation",
 		"model", modelName,
 		"temperature", temp,
 		"top_k", topK,
 		"prompt_len", len(prompt),
 	)
 
-	// 1. Load config
 	cfg := config.LoadConfig()
 	reqBody := OllamaParamRequest{
 		Model:  modelName,
-		System: SystemPrompt, // Direct system instruction enforcing GFM table & structure formatting
+		System: SystemPrompt,
 		Prompt: prompt,
-		Stream: false,
+		Stream: true, // Enabled token streaming
 		Options: OllamaOptions{
 			Temperature: temp,
 			TopK:        topK,
 		},
 	}
+
 	targetURL := fmt.Sprintf("%s/api/generate", cfg.OllamaURL)
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		slog.Error("Failed to marshal request body for Ollama",
-			"error", err,
-			"model", modelName,
-		)
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		slog.Error("Failed to marshal request body for Ollama", "error", err, "model", modelName)
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	client := &http.Client{Timeout: 5 * time.Minute}
@@ -87,7 +86,7 @@ func GenerateRecommendationWithParams(prompt string, temp float64, topK int) (st
 			"target_url", targetURL,
 			"duration_ms", time.Since(startTime).Milliseconds(),
 		)
-		return "", fmt.Errorf("failed to reach local Ollama instance: %w", err)
+		return fmt.Errorf("failed to reach local Ollama instance: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -98,22 +97,34 @@ func GenerateRecommendationWithParams(prompt string, temp float64, topK int) (st
 			"response_body", string(bodyBytes),
 			"duration_ms", time.Since(startTime).Milliseconds(),
 		)
-		return "", fmt.Errorf("ollama API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		return fmt.Errorf("ollama API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		slog.Error("Failed to decode JSON response from Ollama",
-			"error", err,
-			"duration_ms", time.Since(startTime).Milliseconds(),
-		)
-		return "", fmt.Errorf("failed to decode response: %w", err)
+	// Read line-delimited JSON objects from Ollama stream
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var chunk OllamaResponse
+		if err := json.Unmarshal(line, &chunk); err != nil {
+			slog.Warn("Failed to decode token chunk from Ollama", "error", err, "line", string(line))
+			continue
+		}
+
+		// Stream individual token back via callback
+		if chunk.Response != "" {
+			onToken(chunk.Response)
+		}
 	}
 
-	slog.Info("Successfully generated recommendation from Ollama",
-		"duration_ms", time.Since(startTime).Milliseconds(),
-		"response_len", len(result.Response),
-	)
+	if err := scanner.Err(); err != nil {
+		slog.Error("Error encountered while reading Ollama stream", "error", err)
+		return fmt.Errorf("error reading stream: %w", err)
+	}
 
-	return result.Response, nil
+	slog.Info("Successfully completed Ollama token stream", "duration_ms", time.Since(startTime).Milliseconds())
+	return nil
 }
